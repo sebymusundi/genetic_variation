@@ -1,16 +1,14 @@
 #! /usr/bin/env nextflow 
 
-params.reads="/home/bioinfo/bioinfo/Seby_2/raw_data/Fastq/B1195_S8_L001_{R1,R2}_001.fastq"
+params.reads="/home/bioinfo/bioinfo/Seby_2/raw_data_pool_1/*L001_{R1,R2}_001.fastq.gz"
 params.reference="/home/bioinfo/bioinfo/Seby_2/raw_data/Fastq/MT.fasta"
 params.outdir= "/home/bioinfo/bioinfo/Seby_2/results/"
-params.snp_file="/home/bioinfo/bioinfo/Seby_2/raw_data/Fastq/Homo_sapiens_assembly38.dbsnp138.vcf"
-params.human_reference="/home/bioinfo/bioinfo/Seby_2/raw_data/Fastq/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+params.human_reference="/home/bioinfo/bioinfo/Seby_2/raw_data/Fastq/GRCh38_latest_genomic.fna.gz"
 
 
 println "reads: $params.reads"
 println "reference: $params.reference"
 println "outdir: $params.outdir"
-println "snp_file: $params.snp_file "
 println "human_reference: $params.human_reference"
 
 
@@ -30,24 +28,19 @@ log.info """\
 // Quality control using fastqc
 
 process fastqc {
-                container 'biocontainers/fastqc:v0.11.9_cv8'
+                container 'quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0'
                 publishDir "${params.outdir}", mode: 'copy'
 
                 input:
-                tuple val(sample_id), path(my_reads_1)
+                tuple val(sample_id), path(my_reads)
 
                 output:
-                tuple val(sample_id), 
-                path("quality_control/${my_reads_1[0].baseName}_fastqc.html"), 
-                path("quality_control/${my_reads_1[1].baseName}_fastqc.html"), 
-                path("quality_control/${my_reads_1[0].baseName}_fastqc.zip"), 
-                path("quality_control/${my_reads_1[1].baseName}_fastqc.zip")
-
+                tuple val(sample_id), path("*")
 
                 script:
                 """
-                mkdir  quality_control
-                fastqc ${my_reads_1[0]} ${my_reads_1[1]}   -o quality_control
+                mkdir -p quality_control
+               fastqc ${my_reads[0]} ${my_reads[1]} -o quality_control
 
                 """
 
@@ -56,8 +49,8 @@ process fastqc {
 // Removal of adapters using fastp
 
 process fastp {
-                    container 'nanozoo/fastp:latest'
-                    publishDir "${params.outdir}", mode: 'copy'
+                    container 'quay.io/biocontainers/fastp:0.23.3--h5f740d0_0'
+                    publishDir "${params.outdir}", mode: 'link'
 
                     input:
                     tuple val(sample_id), path(my_reads_1)
@@ -71,7 +64,7 @@ process fastp {
                     """
                     mkdir -p fastp_output 
                     
-                    fastp -i ${my_reads_1[0]} -I ${my_reads_1[1]} --adapter_sequence=AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --adapter_sequence_r2=AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT -Q 20 \
+                    fastp -i ${my_reads_1[0]} -I ${my_reads_1[1]} --adapter_sequence=CTGTCTCTTATACACATCT -Q 20 \
                     -o fastp_output/${my_reads_1[0].baseName}.trimmed.fastq -O fastp_output/${my_reads_1[1].baseName}.trimmed.fastq 
                 
                     """
@@ -80,33 +73,33 @@ process fastp {
 //  Trim reads with a quality score less than 20 using trimmomatic
 
 process trimmomatic {
-                    container 'staphb/trimmomatic:latest'
-                    publishDir "${params.outdir}", mode: 'copy'
+                    conda '/home/bioinfo/anaconda3'
+                    publishDir "${params.outdir}", mode: 'link'
 
                     input:
-                    tuple val(sample_id), path(my_reads_1), path(my_reads_2)
+                    tuple val(x), path(my_reads_1)
 
                     output:
                    
-                    tuple val(sample_id), path("trimmomatic_output/${my_reads_1.baseName}.paired.fastq"), 
-                    path("trimmomatic_output/${my_reads_1.baseName}.unpaired.fastq"),
-                    path("trimmomatic_output/${my_reads_2.baseName}.paired.fastq"),
-                    path("trimmomatic_output/${my_reads_2.baseName}.unpaired.fastq")
+                    tuple val(x), path("trimmomatic_output/${my_reads_1[0].baseName}.paired.fastq"), 
+                    path("trimmomatic_output/${my_reads_1[0].baseName}.unpaired.fastq"),
+                    path("trimmomatic_output/${my_reads_1[1].baseName}.paired.fastq"),
+                    path("trimmomatic_output/${my_reads_1[1].baseName}.unpaired.fastq")
                   
 
                     script:
                     """
                     mkdir -p trimmomatic_output 
                     
-                    trimmomatic-0.39.jar PE ${my_reads_1} ${my_reads_2}  trimmomatic_output/${my_reads_1.baseName}.paired.fastq trimmomatic_output/${my_reads_1.baseName}.unpaired.fastq \
-                    trimmomatic_output/${my_reads_2.baseName}.paired.fastq trimmomatic_output/${my_reads_2.baseName}.unpaired.fastq SLIDINGWINDOW:4:20 
+                    trimmomatic PE ${my_reads_1[0]} ${my_reads_1[1]}  trimmomatic_output/${my_reads_1[0].baseName}.paired.fastq trimmomatic_output/${my_reads_1[0].baseName}.unpaired.fastq \
+                    trimmomatic_output/${my_reads_1[1].baseName}.paired.fastq trimmomatic_output/${my_reads_1[1].baseName}.unpaired.fastq SLIDINGWINDOW:4:20 MINLEN:20
                     """
 }
 
 // Checking the quality of trimmed files 
 
 process fastqc_trimmed{
-                        container 'biocontainers/fastqc:v0.11.9_cv8'
+                        container 'quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0'
                         publishDir "${params.outdir}", mode: 'copy'
 
                         input:
@@ -122,7 +115,7 @@ process fastqc_trimmed{
 
                         script:
                         """
-                        mkdir  quality_control_trimmed
+                        mkdir -p quality_control_trimmed
                         fastqc ${trimmed_reads_1}  ${trimmed_reads_3}    -o quality_control_trimmed
 
                         """
@@ -130,150 +123,134 @@ process fastqc_trimmed{
 
 
 
-// Remove host reads 
+// Remove host reads
 
 // Creating an index for the reference genome 
 
-process bowtie_human {
-                        container 'biocontainers/bowtie2:v2.4.1_cv1'
-                        publishDir "${params.outdir}", mode: 'copy'
+process bwa_human {
+                        conda '/home/bioinfo/anaconda3'
+                        publishDir "${params.outdir}", mode: 'link'
+                        memory '28 GB'
 
                         input:
                         path reference
 
                         output:
-                        tuple val("bowtie_human"), path("bowtie_human*")
+                        tuple val("GRCh38_latest_genomic.fna.gz"), path("*")
                 
                         script:
                         """
-                        bowtie2-build ${reference}  bowtie_human
+                        bwa index ${reference} 
                         """
 }
 
 // map the indexed genome against the reads 
 
-process bowtie_align_human {
-                        container 'biocontainers/bowtie2:v2.4.1_cv1'
+process bwa_align_human {
+                        conda '/home/bioinfo/anaconda3'
                         publishDir "${params.outdir}", mode: 'copy'
+                         memory '28 GB'
 
                         input:
-                        tuple val(x), path(my_reads), val(index), path(align_input)
+		        tuple val(ref_id), path(indexes), val(x), path(reads_1), path(reads_2), path(reads_3), path(read_4)
+                         
+                         
+                        output: 
+                        
+                        tuple val(x), path("bam_files/${x}.bam")
                     
-                    
-                        output:
-                        tuple val(x), path("bowtie_output_human/${x}.sam")
                         
                         script:
                         """
-                        mkdir bowtie_output_human
-                        
-                 
-                        bowtie2 -x ${index} -1 ${my_reads[0]} -2 ${my_reads[1]} -S bowtie_output_human/${x}.sam                   
+                        mkdir -p bam_files indexed_files
+                        mv ${indexes}  indexed_files/
+                       
+                        bwa mem indexed_files/${ref_id} ${reads_1} ${reads_3} | samtools view -bS - > bam_files/${x}.bam
+                       
                         """
 }
 
-// Converting sam file to become Bam file followed by sorting and indexing the associated BAM file
-
+// sort and index mapped reads to human genome 
 process samtools_human {
-                     container 'staphb/samtools:latest'
-                     publishDir "${params.outdir}" , mode: 'copy'
+                    conda '/home/bioinfo/anaconda3'
+                     publishDir "${params.outdir}" , mode: 'link'
                     
 
                      input:
                      tuple val(x),path(sam_file)
 
                      output:
-                     tuple val(x), path("bam_files_human/${sam_file.baseName}.sorted.bam"), path("bam_files_human/${sam_file.baseName}.sorted.bam.bai")
+                     tuple val(x), path("bam_files_sorted/${sam_file.baseName}.sorted.bam"), path("bam_files_sorted/${sam_file.baseName}.sorted.bam.bai")
 
                      script:
                      """
-                     mkdir bam_files_human 
-                    samtools view -O BAM ${sam_file} -o  bam_files_human/${sam_file.baseName}.bam
-                    samtools sort  bam_files_human/${sam_file.baseName}.bam -o  bam_files_human/${sam_file.baseName}.sorted.bam -O BAM
-                    samtools index  bam_files_human/${sam_file.baseName}.sorted.bam
+                    mkdir -p bam_files_sorted 
+                    samtools sort ${sam_file} -o  bam_files_sorted/${sam_file.baseName}.sorted.bam -O BAM
+                    samtools index  bam_files_sorted/${sam_file.baseName}.sorted.bam
+                    
                      """
 }
 
+
+// filter out unmapped reads 
+
 // filter out unmapped reads 
 process filter_unmapped_reads {
-                     container 'staphb/samtools:latest'
-                     publishDir "${params.outdir}" , mode: 'copy'
+                    conda '/home/bioinfo/anaconda3'
+                     publishDir "${params.outdir}" , mode: 'link'
                     
 
                      input:
                      tuple val(x),path(bam_file), path(bam_file_index)
 
                      output:
-                     tuple val(x), path("bam_files_unmapped/${bam_file.baseName}.unmapped.bam")
+                     tuple val(x), path("bam_files_unmapped/${bam_file.baseName}.unmapped.bam"), path("bam_files_unmapped/${bam_file.baseName}.unmapped.sorted.bam")
 
                      script:
                      """
-                     mkdir bam_files_unmapped
-                     samtools view -b -f 12 -F 256 ${bam_file} -o bam_files_unmapped/${bam_file.baseName}.unmapped.bam
+                     mkdir -p bam_files_unmapped
+                     samtools view -b -f 4 ${bam_file} -o bam_files_unmapped/${bam_file.baseName}.unmapped.bam
+                     samtools sort bam_files_unmapped/${bam_file.baseName}.unmapped.bam -o bam_files_unmapped/${bam_file.baseName}.unmapped.sorted.bam -O BAM
                     
                      """
 }
 
-// split paired end reds into separated fastq files 
-
-process split_file_sort  {
-                     container 'staphb/samtools:latest'
-                     publishDir "${params.outdir}" , mode: 'copy'
-                    
-
-                     input:
-                     tuple val(x),path(bam_file)
-
-                     output:
-                     tuple val(x), path("bam_files_sort/${bam_file.baseName}.unmapped.sorted.bam")
-
-                     script:
-                     """
-                     mkdir bam_files_sort
-                     samtools sort ${bam_file} -o bam_files_sort/${bam_file.baseName}.unmapped.sorted.bam -O BAM
-                           
-                     """
-}
 
 // split files to fastq 
 
 process split_file  {
-                     container 'staphb/samtools:latest'
+                     conda '/home/bioinfo/anaconda3'
                      publishDir "${params.outdir}" , mode: 'copy'
                     
 
                      input:
-                     tuple val(x),path(bam_file)
+                     tuple val(x),path(bam_file_1), path(bam_file_2)
 
                      output:
-                     tuple val(x), path("bam_files_split/${x}_R1_001.fastq"), path("bam_files_split/${x}_R2_001.fastq")
+                     tuple val(x), path("bam_files_splitted/${x}_1.fastq"), path("bam_files_splitted/${x}_2.fastq")
 
                      script:
                      """
-                     mkdir bam_files_split
-                     samtools fastq -1 bam_files_split/${x}_R1_001.fastq -2 bam_files_split/${x}_R2_001.fastq ${bam_file}
+                     mkdir -p bam_files_splitted
+                     samtools fastq ${bam_file_2} -1  bam_files_splitted/${x}_1.fastq -2 bam_files_splitted/${x}_2.fastq
                            
                      """
 }
+
 
 // Mapping against the MTB reference genome 
 
 // Creating an index for the reference genome 
 
 process bwa_index {
-                        container 'staphb/bwa:latest'
-                        publishDir "${params.outdir}", mode: 'copy'
+                        conda '/home/bioinfo/anaconda3'
+                        publishDir "${params.outdir}", mode: 'link'
 
                         input:
                         path reference
 
                         output:
-                        tuple val("MT.fasta"), 
-                        path("${reference}.bwt"), 
-                        path("${reference}.pac"), 
-                        path("${reference}.ann"), 
-                        path("${reference}.amb"), 
-                        path("${reference}.sa")
+                        tuple val("MT.fasta"), path("*")
 
                 
                         script:
@@ -285,53 +262,53 @@ process bwa_index {
 // map the indexed genome against the reads 
 
 process bwa_align {
-                        container 'staphb/bwa:latest'
+                        conda '/home/bioinfo/anaconda3'
                         publishDir "${params.outdir}", mode: 'copy'
 
                         input:
-			 tuple val(x), path(reads_1), path(reads_2) 
-                         tuple val(ref_id), path(index_bwt), path(index_pac), path(index_ann), path(index_amb), path(index_sa)
+			tuple val(ref_id), path(indexes), val(x), path(reads_1), path(reads_2)
                          
                         output: 
                         
-                        tuple val(x), path("sam_file_output/${x}.sam")
+                        tuple val(x), path("bam_file_output/${x}.bam")
                     
                         
                         script:
                         """
-                        mkdir -p indexed_files sam_file_output
-                        mv ${index_bwt} ${index_pac} ${index_ann} ${index_amb} ${index_sa} indexed_files/
-                        bwa mem indexed_files/${ref_id} ${reads_1} ${reads_2} > sam_file_output/${x}.sam 
+                        mkdir -p indexed_files bam_file_output
+                        mv ${indexes} indexed_files/
+                        bwa mem indexed_files/${ref_id} ${reads_1} ${reads_2} | samtools view -bS - > bam_file_output/${x}.bam
                         """
 }
 
 
-// Converting sam file to become Bam file followed by sorting and indexing the associated BAM file
 
-process samtools {
-                     container 'staphb/samtools:latest'
-                     publishDir "${params.outdir}" , mode: 'copy'
+// sort and index mapped reads to TB genome
+process samtools_TB {
+                    conda '/home/bioinfo/anaconda3'
+                     publishDir "${params.outdir}" , mode: 'link'
                     
 
                      input:
                      tuple val(x),path(sam_file)
 
                      output:
-                     tuple val(x), path("bam_files/${sam_file.baseName}.sorted.bam"), path("bam_files/${sam_file.baseName}.sorted.bam.bai")
+                     tuple val(x), path("bam_files_sorted/${sam_file.baseName}.sorted.bam"), path("bam_files_sorted/${sam_file.baseName}.sorted.bam.bai")
 
                      script:
                      """
-                     mkdir bam_files 
-                    samtools view -O BAM ${sam_file} -o  bam_files/${sam_file.baseName}.bam
-                    samtools sort  bam_files/${sam_file.baseName}.bam -o  bam_files/${sam_file.baseName}.sorted.bam -O BAM
-                    samtools index  bam_files/${sam_file.baseName}.sorted.bam
+                    mkdir -p bam_files_sorted 
+                    samtools sort ${sam_file} -o  bam_files_sorted/${sam_file.baseName}.sorted.bam -O BAM
+                    samtools index  bam_files_sorted/${sam_file.baseName}.sorted.bam
+                    
                      """
 }
+
 
 // Checking the number of reads which mapped to the SARS-CoV-2 reference genome
 
 process samtools_flagstat {
-                                        container 'staphb/samtools:latest'
+                                        conda '/home/bioinfo/anaconda3'
                                         publishDir "${params.outdir}" , mode: 'copy'
                                         
 
@@ -343,7 +320,7 @@ process samtools_flagstat {
 
                                         script:
                                         """
-                                        mkdir mapped_stats
+                                        mkdir -p  mapped_stats
                                         samtools flagstat ${bam_file} > mapped_stats/${bam_file.baseName}.stats
                                         """
 }
@@ -352,7 +329,7 @@ process samtools_flagstat {
 
 
 process samtools_index {
-                                        container 'staphb/samtools:latest'
+                                        conda '/home/bioinfo/anaconda3'
                                         publishDir "${params.outdir}" , mode: 'copy'
                                         
 
@@ -369,8 +346,8 @@ process samtools_index {
 }
 
 process picard_sort {
-                                        conda '/home/bioinfo/anaconda3/envs/bioinfo'
-                                        publishDir "${params.outdir}" , mode: 'copy'
+                                        conda '/home/bioinfo/anaconda3'
+                                        publishDir "${params.outdir}" , mode: 'link'
                                         
 
                                         input: 
@@ -388,8 +365,8 @@ process picard_sort {
 }
 
 process picard_read_groups {
-                                        conda '/home/bioinfo/anaconda3/envs/bioinfo'
-                                        publishDir "${params.outdir}" , mode: 'copy'
+                                        conda '/home/bioinfo/anaconda3'
+                                        publishDir "${params.outdir}" , mode: 'link'
                                         
 
                                         input: 
@@ -407,8 +384,8 @@ process picard_read_groups {
 }
 
 process picard_mark_duplicates {
-                                        conda '/home/bioinfo/anaconda3/envs/bioinfo'
-                                        publishDir "${params.outdir}" , mode: 'copy'
+                                        conda '/home/bioinfo/anaconda3'
+                                        publishDir "${params.outdir}" , mode: 'link'
                                         
 
                                         input: 
@@ -484,13 +461,13 @@ process lofreq_filter_variant {
 }
 
 process variant_calling_bcf{
-                                        conda'/home/bioinfo/anaconda3/envs/bioinfo'
+                                        conda '/home/bioinfo/anaconda3'
                                         publishDir "${params.outdir}" , mode: 'copy'
                                         
 
                                         input: 
-                                        tuple val(x), path(bam_file), path(metric_file)
-                                        path(reference)
+                                        tuple val(x), path(bam_file), path(metric_file),  path(reference)
+                                       
 
                                         
                                         output:
@@ -498,14 +475,14 @@ process variant_calling_bcf{
 
                                         script:
                                         """
-                                        mkdir bcftools_variant 
-                                        samtools  mpileup -u -f ${reference} ${bam_file}|bcftools call -v -c  --ploidy 1 > bcftools_variant/${x}.vcf
+                                        mkdir -p bcftools_variant 
+                                        bcftools  mpileup -Ou -f ${reference} ${bam_file}|bcftools call -Ov -c  --ploidy 1 -o bcftools_variant/${x}.vcf
                                         """
 
 }
 
 process filter_bcf{
-                                        conda'/home/bioinfo/anaconda3/envs/bioinfo'
+                                       conda '/home/bioinfo/anaconda3'
                                         publishDir "${params.outdir}" , mode: 'copy'
                                         
 
@@ -513,19 +490,20 @@ process filter_bcf{
                                         tuple val(x), path(vcf_file)
                                        
                                         output:
-                                        tuple val(x), path("bcftools_filter/${x}.vcf")
+                                        tuple val(x), path("bcftools_filter/${x}.vcf.gz"), path("bcftools_filter/${x}.vcf.gz.csi")
 
                                         script:
                                         """
-                                        mkdir bcftools_filter
-                                        bcftools filter -O v  ${vcf_file} -i 'TYPE="snp" && MIN(DP)>5 && QUAL>20' -o bcftools_filter/${x}.vcf
+                                        mkdir -p bcftools_filter
+                                        bcftools filter -Oz  ${vcf_file} -i 'TYPE="snp" && MIN(DP)>5 && QUAL>20' -o bcftools_filter/${x}.vcf.gz
+                                        bcftools index bcftools_filter/${x}.vcf.gz
 
                                         """
 
 }
 
 process filter_bcf_indels{
-                                        conda'/home/bioinfo/anaconda3/envs/bioinfo'
+                                        conda '/home/bioinfo/anaconda3'
                                         publishDir "${params.outdir}" , mode: 'copy'
 
 
@@ -537,53 +515,98 @@ process filter_bcf_indels{
 
                                         script:
                                         """
-                                        mkdir bcftools_filter_indels
+                                        mkdir -p bcftools_filter_indels
                                         bcftools filter -O v  ${vcf_file} -i 'TYPE="indels" && MIN(DP)>5 && QUAL>20' -o bcftools_filter_indels/${x}.vcf
 
                                         """
 
 }
 
+// identify mutations against multiple different drugs used to treat TB 
+
+
+process drug_snps {
+                                        conda '/home/bioinfo/anaconda3'
+                                        publishDir "${params.outdir}" , mode: 'copy'
+                                        
+
+                                        input: 
+                                        tuple val(x), path(variant_file), path(variant_index)
+                                       
+
+                                        
+                                        output:
+                                        tuple val(x), 
+                                        path("rpoB/${x}.vcf.gz"), 
+                                        path("katG/${x}.vcf.gz"), 
+                                        path("embB/${x}.vcf.gz"), 
+                                        path("gyrA/${x}.vcf.gz"), 
+                                        path("gyrB/${x}.vcf.gz"), 
+                                        path("rrs/${x}.vcf.gz"), 
+                                        path("fgd1/${x}.vcf.gz"), 
+                                        path("fbiC/${x}.vcf.gz"), 
+                                        path("pncA/${x}.vcf.gz")
+
+                                        script:
+                                        """
+                                        mkdir -p rpoB katG embB gyrA gyrB rrs fgd1 fbiC pncA
+                                        bcftools  view -Oz -r 'gi|448814763|ref|NC_000962.3|:759807-763325'  -o rpoB/${x}.vcf.gz ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:2153889-2156111' -o katG/${x}.vcf.gz   ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:4246514-4249810' -o embB/${x}.vcf.gz   ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:7302-9818' -o gyrA/${x}.vcf.gz   ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:5240-7267' -o gyrB/${x}.vcf.gz   ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:1471846-1473382' -o rrs/${x}.vcf.gz  ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:490783-491793' -o fgd1/${x}.vcf.gz  ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:1302931-1305501' -o fbiC/${x}.vcf.gz  ${variant_file}
+                                        bcftools  view -Oz -r  'gi|448814763|ref|NC_000962.3|:2288681-2289241' -o pncA/${x}.vcf.gz     ${variant_file}                            
+                                        """
+
+}
+
+
+
 
 workflow {
 my_reads=Channel.fromFilePairs("$params.reads")
 my_reference=Channel.fromPath("$params.reference")
-my_known_sites=Channel.fromPath("$params.snp_file")
 human_reads=Channel.fromPath("$params.human_reference")
 //my_reads.view()
 fastqc(my_reads)
 //fastp_ch=fastp(my_reads)
 //fastp_ch.view()
-//trimmomatic_ch=trimmomatic(fastp_ch)
+trimmomatic_ch=trimmomatic(my_reads)
 //trimmomatic_ch.view()
 //fastqc_trimmed(trimmomatic_ch)
-bowtie_human_ch=bowtie_human(human_reads)
-bowtie_align_human_ch=my_reads.combine(bowtie_human_ch)
-//bowtie_align_human_ch.view()
-bowtie_human_sam=bowtie_align_human(bowtie_align_human_ch)
-samtools_human_ch=samtools_human(bowtie_human_sam)
+bwa_human_ch=bwa_human(human_reads)
+bwa_align_human_ch=bwa_human_ch.combine(trimmomatic_ch)
+//bwa_align_human_ch.view()
+bwa_human_sam=bwa_align_human(bwa_align_human_ch)
+samtools_human_ch=samtools_human(bwa_human_sam)
 unmapped_bam_ch =filter_unmapped_reads(samtools_human_ch)
-split_file_ch=split_file_sort(unmapped_bam_ch)
-split_bam_to_fastq=split_file(split_file_ch)
-//split_bam_to_fastq.view()
+split_file_ch=split_file(unmapped_bam_ch)
+//split_file_ch.view()
 bwa_ch=bwa_index(my_reference)
 //bwa_ch.view()
-//bwa_combined_ch=split_bam_to_fastq.combine(bwa_ch)
+bwa_combined_ch=bwa_ch.combine(split_file_ch)
 //bwa_combined_ch.view()
-bwa_aligned_ch=bwa_align(split_bam_to_fastq, bwa_ch)
+bwa_aligned_ch=bwa_align(bwa_combined_ch)
 //bwa_aligned_ch.view()
-samtools_ch=samtools(bwa_aligned_ch)
+samtools_ch=samtools_TB(bwa_aligned_ch)
+//samtools_ch.view()
 samtools_flagstat(samtools_ch)
 samtools_index(my_reference)
 picard_sort_ch=picard_sort(samtools_ch)
 picard_RG_ch=picard_read_groups(picard_sort_ch)
 picard_duplicates_ch=picard_mark_duplicates(picard_RG_ch)
-lofreq_indels_ch=lofreq_indels(picard_duplicates_ch,my_reference)
-lofreq_indels_ch.view()
-lofreq_variant_ch=lofreq_call_variant(lofreq_indels_ch, my_reference)
-lofreq_filter_variant(lofreq_variant_ch)
-bcf_variant_ch=variant_calling_bcf(picard_duplicates_ch,my_reference)
+//lofreq_indels_ch=lofreq_indels(picard_duplicates_ch,my_reference)
+//lofreq_indels_ch.view()
+//lofreq_variant_ch=lofreq_call_variant(lofreq_indels_ch, my_reference)
+//lofreq_filter_variant(lofreq_variant_ch)
+picard_preprocess_ch=picard_duplicates_ch.combine(my_reference)
+///picard_preprocess_ch.view()
+bcf_variant_ch=variant_calling_bcf(picard_preprocess_ch)
 //bcf_variant_ch.view()
-filter_bcf(bcf_variant_ch)
-filter_bcf_indels(bcf_variant_ch)
+filter_bcf_ch=filter_bcf(bcf_variant_ch)
+//filter_bcf_indels(bcf_variant_ch)
+drug_snps(filter_bcf_ch)
 }
