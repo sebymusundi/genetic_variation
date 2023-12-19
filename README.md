@@ -4,7 +4,7 @@ This script is used to analyze Mycobacterium tuberculosis whole genome sequencin
 resistance or susceptibility to commonly used drugs 
 
 ### Requirements
- Nextflow 
- Docker / Conda 
+ - Nextflow 
+ - Docker / Conda 
  
 
